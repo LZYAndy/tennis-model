@@ -21,7 +21,7 @@ history_df_wta = concat_data(1968, 2023, 'wta')
 
 # evaluate pcsp file
 def eval_pcsp(dir, file_name):
-    os.system('cp %s ../../PAT351/%s' % (os.path.join(dir, file_name), file_name))
+    os.system('cp %s ../PAT351/%s' % (os.path.join(dir, file_name), file_name))
     os.chdir('/home/user/zhaoyu/PAT351')
     os.system('mono PAT3.Console.exe -pcsp %s %s.txt' % (file_name, file_name[:-5]))
     with open('%s.txt' % file_name[:-5]) as f:
