@@ -1,0 +1,28 @@
+enum{f_ad_ct, f_de_ct, n_ad_ct, n_de_ct}; //serve position: ad court or deuce court
+enum{player1, player2, na};
+
+var turn = na; //serve turn;
+var fscore = 0;
+var nscore = 0;
+var won = na;
+var ball = 9;
+var Ply1_At_Net = 0;
+var Ply2_At_Net = 0;
+var points = 7;
+
+TieBreakGame = WhoServe1st; (Player1Serve [] Player2Serve);
+EqualServes = De_Ply1Serve [] Ad_Ply1Serve [] De_Ply2Serve [] Ad_Ply2Serve;
+Match = equal_chance_of_serving -> pcase {
+	1: De_Ply1Serve
+	1: Ad_Ply1Serve
+	1: De_Ply2Serve
+	1: Ad_Ply2Serve
+};
+WhoServe1st = []i:{f_de_ct,n_de_ct}@ TossCoin{turn = i} -> Skip;
+Player1Serve = [won == na && turn == f_de_ct]FedReady_DeCt -> De_Ply1Serve [] 
+			   [won == na && turn == f_ad_ct]FedReady_AdCt -> Ad_Ply1Serve;
+Player2Serve = [won == na && turn == n_de_ct]NadReady_DeCt -> De_Ply2Serve [] 
+			   [won == na && turn == n_ad_ct]NadReady_AdCt -> Ad_Ply2Serve;
+NextPt = Player1Serve [] Player2Serve [] ([won != na] GameOver -> Skip);
+Resume = BackToBaseline{Ply1_At_Net=0;Ply2_At_Net=0} -> Skip;
+
