@@ -87,7 +87,6 @@ def obtain_ply_info(ply_name):
 # obtain parameters
 def get_params(df, hand):
     # define player position
-    # volley = [5, 13, 15, 26, 34, 36]
     volley = [5, 26]
     # specific df
     ply_position = []
@@ -182,7 +181,7 @@ def get_params(df, hand):
                 stroke_err = [len(Stroke.query('shot_outcome in [2, 3, 4]'))]
                 approach_stroke_list = stroke_in + stroke_win + stroke_err
                 if sum(approach_stroke_list) > 0:
-                    t = 1 #sum(stroke_list) // sum(approach_stroke_list)  # 50%
+                    t = 1 
                     approach_stroke_list = [s * t + stroke_list[k] for k, s in enumerate(approach_stroke_list)]
                 else:
                     approach_stroke_list = stroke_list
@@ -232,7 +231,7 @@ def obtain_similar_elo_players(ply_name, names, players_elo, thresh=100):
     return similar_elo_as_ply, ply_elo
 
 
-def obtain_ply_rates(TLSE_date, players_elo, ply_name):
+def obtain_ply_chars(TLSE_date, players_elo, ply_name):
     volley = [5, 13, 15, 26, 34, 36]
     if ply_name not in players_elo:
         ply_elo = 1500 / 3000
@@ -268,22 +267,10 @@ def obtain_ply_rates(TLSE_date, players_elo, ply_name):
     ## All-court / baseliner
     ply_At_Net = TLSE_ply.query('shot_type in [3, 4] and (approach_shot == 1 or shot in @volley or hit_at_depth == 1)')
     ply_Net_rate = len(ply_At_Net) / (len(ply_Return) + len(ply_FH_Stroke) + len(ply_BH_Stroke))
-    ## defensive / aggresive (rally length)
-    # ply_Rallies = TLSE_date.query('(ply1_name==@ply_name or ply2_name==@ply_name) and shot_outcome in [1, 5, 6, 2, 3, 4]')
-    # ply_RLen_rate = sum(ply_Rallies.shot_count) / len(ply_Rallies)
 
-    # if ply_RLen_rate > 10:
-    #     print('!!!!!!!!')
-    #     print(ply_RLen_rate)
-    #     print('!!!!!!!!')
-    #     # exit(0)
-
-    # ply_RLen_rate /= 10
-
-    ply_rates = np.array([ply_elo, ply_Serve_rate, ply_Return_rate, ply_FH_Stroke_rate, ply_BH_Stroke_rate,
+    ply_chars = np.array([ply_elo, ply_Serve_rate, ply_Return_rate, ply_FH_Stroke_rate, ply_BH_Stroke_rate,
                           ply_BigServe_rate, ply_ServeVolley_rate, ply_Net_rate])
-    # print(ply_name, ply_rates)
-    return ply_rates
+    return ply_chars
 
 
 def generate_transition_probs(TLSE, match, prev_date):
@@ -305,46 +292,53 @@ def generate_transition_probs(TLSE, match, prev_date):
     if len(check_match_date) > 0:
         date = check_match_date.iloc[0].date
 
+    # fine related historical matches for ply1
     TLSE_date = TLSE.query('date>=@prev_date and date<@date')
     TLSE_ply1 = TLSE_date.query('ply1_name==@ply1_name and ply2_hand==@ply2_hand')
     if len(TLSE_ply1) == 0:
         return None, None, None, None
+    
+    # fine related historical matches for ply1
     TLSE_ply2 = TLSE_date.query('ply1_name==@ply2_name and ply2_hand==@ply1_hand')
     if len(TLSE_ply2) == 0:
         return None, None, None, None
     ply1_prev_n, ply2_prev_n = [], []
     ply1_cond, ply2_cond = -1, -1
 
+    # calculate players' elo rankings
     history_df = history_df_atp if gender == 'M' else history_df_wta
     history_df = history_df.query('tny_date<@date')
     players_elo = generate_elo_columns(history_df[['w_name', 'l_name', 'is_gs']].to_numpy(), True)
 
+    # players with similar elo as ply1
     similar_elo_as_ply1, ply1_elo = obtain_similar_elo_players(ply1_name, TLSE_ply2.ply2_name.unique(), players_elo)
     if len(similar_elo_as_ply1) == 0:
         return None, None, None, None
+
+    # players with similar elo as ply1
     similar_elo_as_ply2, ply2_elo = obtain_similar_elo_players(ply2_name, TLSE_ply1.ply2_name.unique(), players_elo)
     if len(similar_elo_as_ply2) == 0:
         return None, None, None, None
 
-    # obtain target players' rates
-    target_ply_rates = []
+    # obtain target players' characters
+    target_ply_chars = []
     for ply_name in [ply1_name, ply2_name]:
-        target_ply_rates.append(obtain_ply_rates(TLSE_date, players_elo, ply_name))
-    target_ply_rates = np.array(target_ply_rates)
+        target_ply_chars.append(obtain_ply_chars(TLSE_date, players_elo, ply_name))
+    target_ply_chars = np.array(target_ply_chars)
 
-    # get ply1 params
+    # similarity scores between ply1's opponents and ply2
     similarity = []
     ply_dim = 0
     for ply_name in similar_elo_as_ply2:
-        ply_rates = obtain_ply_rates(TLSE_date, players_elo, ply_name)
+        ply_chars = obtain_ply_chars(TLSE_date, players_elo, ply_name)
         if ply_dim == 0:
-            ply_dim = len(ply_rates)
-        dist = np.linalg.norm(target_ply_rates[1] - ply_rates)
-        # print(dist)
+            ply_dim = len(ply_chars)
+        dist = np.linalg.norm(target_ply_chars[1] - ply_chars)
         dist = dist if dist > 0.01 else 0.01
         similarity.append(1 / dist)
     similarity = [x / sum(similarity) for x in similarity]  # normalize
-    # print(similarity)
+
+    # get ply1 MDP params
     ply1_params = None
     num_ply1_prev_n = 0  # num of prev matches
     for i, ply_name in enumerate(similar_elo_as_ply2):
@@ -355,19 +349,19 @@ def generate_transition_probs(TLSE, match, prev_date):
             ply1_params = params
             continue
         ply1_params += params
-    if num_ply1_prev_n <= 3:
+    if num_ply1_prev_n <= 3:  # make sure there are at least 4 related historical matches
         return None, None, None, None
 
-    # get ply2 params
+    # similarity scores between ply2's opponents and ply1
     similarity = []
     for ply_name in similar_elo_as_ply1:
-        ply_rates = obtain_ply_rates(TLSE_date, players_elo, ply_name)
-        dist = np.linalg.norm(target_ply_rates[0] - ply_rates)
-        # print(dist)
+        ply_chars = obtain_ply_chars(TLSE_date, players_elo, ply_name)
+        dist = np.linalg.norm(target_ply_chars[0] - ply_chars)
         dist = dist if dist > 0.01 else 0.01
         similarity.append(1 / dist)
     similarity = [x / sum(similarity) for x in similarity]  # normalize
-    # print(similarity)
+
+    # get ply2 MDP params
     ply2_params = None
     num_ply2_prev_n = 0  # num of prev matches
     for i, ply_name in enumerate(similar_elo_as_ply1):
@@ -378,7 +372,7 @@ def generate_transition_probs(TLSE, match, prev_date):
             ply2_params = params
             continue
         ply2_params += params
-    if num_ply2_prev_n <= 3:
+    if num_ply2_prev_n <= 3:  # make sure there are at least 4 related historical matches
         return None, None, None, None
 
     # sample
@@ -386,116 +380,11 @@ def generate_transition_probs(TLSE, match, prev_date):
               int(ply1_hand == 'RH'), int(ply2_hand == 'RH')]
     sample = sample + list(ply1_params) + list(ply2_params) + [is_ply1_win, num_ply1_prev_n, num_ply2_prev_n, 1, 1]
 
-    # # select similar players as ply1
-    # similar_as_ply1 = []
-    # for ply_name in similar_elo_as_ply1:
-    #     ply_rates = obtain_ply_rates(TLSE_date, players_elo, ply_name)
-    #     # print()
-    #     # print(ply1_name, target_ply_rates[0])
-    #     # print(ply_name, ply_rates)
-    #     # print(np.linalg.norm(target_ply_rates[0] - ply_rates))
-    #     # print()
-    #     if np.linalg.norm(target_ply_rates[0] - ply_rates) <= 0.05:
-    #         similar_as_ply1.append(ply_name)
-    #
-    # # select similar players as ply2
-    # similar_as_ply2 = []
-    # for ply_name in similar_elo_as_ply2:
-    #     ply_rates = obtain_ply_rates(TLSE_date, players_elo, ply_name)
-    #     # print()
-    #     # print(ply2_name, target_ply_rates[1])
-    #     # print(ply_name, ply_rates)
-    #     # print(np.linalg.norm(target_ply_rates[1] - ply_rates))
-    #     # print()
-    #     if np.linalg.norm(target_ply_rates[1] - ply_rates) <= 0.05:
-    #         similar_as_ply2.append(ply_name)
-    #
-    # ply1_prev_n = TLSE_ply1.query('ply2_name in @similar_as_ply2 and ply2_hand==@ply2_hand')
-    # ply2_prev_n = TLSE_ply2.query('ply2_name in @similar_as_ply1 and ply2_hand==@ply1_hand')
-    #
-    # if len(ply1_prev_n) == 0:
-    #     return None, None, None
-    # else:
-    #     ply1_cond = 1
-    # if len(ply2_prev_n) == 0:
-    #     return None, None, None
-    # else:
-    #     ply2_cond = 1
-    #
-    # # number of matches played
-    # num_ply1_prev_n = len(ply1_prev_n.date.unique())
-    # num_ply2_prev_n = len(ply2_prev_n.date.unique())
-    #
-    # # get players params
-    # ply1_params = get_params(ply1_prev_n, ply1_hand)
-    # ply2_params = get_params(ply2_prev_n, ply2_hand)
-    #
-    # # transfer to probabilities
-    # ply1_probs = [[c / sum(r) if sum(r) != 0 else 0 for c in r] for r in ply1_params]
-    # ply2_probs = [[c / sum(r) if sum(r) != 0 else 0 for c in r] for r in ply2_params]
-    #
-    # # sample
-    # sample = [match.Date.strftime('%Y-%m-%d'), gender, match.Tournament, match.Surface, ply1_name, ply2_name,
-    #           int(ply1_hand == 'RH'), int(ply2_hand == 'RH')]
-    # sample = sample + sum(ply1_probs, []) + sum(ply2_probs, []) + [is_ply1_win, num_ply1_prev_n, num_ply2_prev_n,
-    #                                                                  ply1_cond, ply2_cond]
-
     return np.array(sample), ply1_elo, ply2_elo, ply_dim
 
 
 def read_csv_file(file, save=False):
     match = pd.read_csv(file)
-    # match = pd.read_csv(file, names=['ply1_name', 'ply2_name', 'ply1_hand', 'ply2_hand', 'ply1_points',
-    #                                  'ply2_points', 'ply1_games', 'ply2_games', 'ply1_sets', 'ply2_sets', 'date',
-    #                                  'tournament_name', 'shot_type', 'from_which_court', 'shot', 'direction',
-    #                                  'to_which_court', 'depth', 'touched_net', 'hit_at_depth', 'approach_shot',
-    #                                  'shot_outcome', 'fault_type', 'prev_shot_type', 'prev_shot_from_which_court',
-    #                                  'prev_shot', 'prev_shot_direction', 'prev_shot_to_which_court', 'prev_shot_depth',
-    #                                  'prev_shot_touched_net', 'prev_shot_hit_at_depth', 'prev_shot_approach_shot',
-    #                                  'prev_shot_outcome', 'prev_shot_fault_type', 'prev_prev_shot_type',
-    #                                  'prev_prev_shot_from_which_court', 'prev_prev_shot', 'prev_prev_shot_direction',
-    #                                  'prev_prev_shot_to_which_court', 'prev_prev_shot_depth',
-    #                                  'prev_prev_shot_touched_net', 'prev_prev_shot_hit_at_depth',
-    #                                  'prev_prev_shot_approach_shot', 'prev_prev_shot_outcome',
-    #                                  'prev_prev_shot_fault_type', 'url', 'description'])
-    # add approach to serve (serve and volley)
-    # volley = [5, 13, 15, 26, 34, 36]
-    # for index in match.query(
-    #         'shot in @volley and prev_prev_shot_type in [1, 2] and prev_prev_shot_outcome not in [2, 3, 4] and prev_prev_shot_approach_shot!=1').index.values:
-    #     match.at[index, 'prev_prev_shot_approach_shot'] = 1
-    #     match.at[index - 1, 'prev_shot_approach_shot'] = 1
-    #     match.at[index - 2, 'approach_shot'] = 1
-    # # change forced error to opponent's winner
-    # for index in match.query('shot_outcome==3').index.values:
-    #     match.at[index - 1, 'shot_outcome'] = 5
-    # match = match.query('shot_outcome!=3')
-    # # add final outcome
-    # match['final_outcome'] = [0] * len(match)
-    # prev_i, i = 0, 0
-    # for _, row in match.iterrows():
-    #     i += 1
-    #     if row.shot_outcome in [1, 5, 6]:  # winner
-    #         for index in match.iloc[prev_i:i].query('ply1_name==@row.ply1_name').index:
-    #             match.at[index, 'final_outcome'] = 1
-    #         prev_i = i
-    #     elif row.shot_outcome in [2, 3, 4]:  # err
-    #         for index in match.iloc[prev_i:i].query('ply1_name==@row.ply2_name').index:
-    #             match.at[index, 'final_outcome'] = 1
-    #         prev_i = i
-    #     elif row.shot_type == 2 and row.shot_outcome == 2:  # double fault
-    #         prev_i = i
-    # # add shot number count
-    # match['shot_count'] = [1] * len(match)
-    # shot_count = 1
-    # for index, row in match.iterrows():
-    #     match.at[index, 'shot_count'] = shot_count
-    #     if row.shot_outcome in [1, 5, 6, 2, 3, 4]:  # last shot
-    #         shot_count = 1
-    #     else:
-    #         shot_count += 1
-    # # save the csv file
-    # if save:
-    #     match.to_csv(file.replace('tennisabstract-csv-v3', 'tennisabstract-csv-v4'), index=False)
     return match
 
 
